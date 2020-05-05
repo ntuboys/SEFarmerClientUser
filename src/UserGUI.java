@@ -13,249 +13,253 @@ import java.net.*;
 import java.util.*;
 import java.lang.*;
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
 import org.json.simple.*;
+
+interface Callback {
+
+  void getData(JSONObject obj);
+}
 
 class ServerConnection {
 
-    Socket socket;
-    String host;
-    int port;
-    PrintWriter socketWriter;
-    BufferedReader socketReader;
-    boolean init = false;
-    SwingWorker<Void, Void> loop;
-    public boolean authed = false;
+  Socket socket;
+  String host;
+  int port;
+  PrintWriter socketWriter;
+  BufferedReader socketReader;
+  boolean init = false;
+  SwingWorker<Void, Void> loop;
+  public boolean authed = false;
 
-    ServerConnection(String host, int port) {
-        this.host = host;
-        this.port = port;
+  ServerConnection(String host, int port) {
+    this.host = host;
+    this.port = port;
+  }
+
+  public List<Callback> listeners = new ArrayList<Callback>();
+
+  public void gotData(JSONObject obj) {
+    for (Callback listener : listeners) {
+      listener.getData(obj);
     }
+  }
 
-    boolean init() {
-        if (init) {
-            return false;
-        }
-        try {
-            socket = new Socket(host, port);
-            socketWriter = new PrintWriter(socket.getOutputStream(), true);
-            socketReader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        } catch (UnknownHostException ex) {
-            System.out.println("Server not found: " + ex.getMessage());
-        } catch (IOException ex) {
-            System.out.println("I/O error: " + ex.getMessage());
-        }
-        init = true;
-        return true;
+  boolean init() {
+    if (init) {
+      return false;
     }
+    try {
+      socket = new Socket(host, port);
+      socketWriter = new PrintWriter(socket.getOutputStream(), true);
+      socketReader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+    } catch (UnknownHostException ex) {
+      System.out.println("Server not found: " + ex.getMessage());
+    } catch (IOException ex) {
+      System.out.println("I/O error: " + ex.getMessage());
+    }
+    init = true;
+    return true;
+  }
 
-    boolean auth(String user, String pass) {
-        JSONObject toSend = new JSONObject();
-        toSend.put("type", "user");
-        toSend.put("purpose", "auth");
-        toSend.put("username", user);
-        toSend.put("password", pass);
-        socketWriter.println(toSend);
-        try {
+  boolean auth(String user, String pass) {
+    JSONObject toSend = new JSONObject();
+    toSend.put("clientType", "user");
+    toSend.put("purpose", "auth");
+    JSONObject dataToSend = new JSONObject();
+
+    dataToSend.put("username", user);
+    dataToSend.put("password", pass);
+    toSend.put("data", dataToSend);
+    socketWriter.println(toSend);
+    try {
+      String line = socketReader.readLine();
+      JSONObject obj = (JSONObject) JSONValue.parse(line);
+      System.out.println(line);
+      if (obj.get("purpose").equals("auth")) {
+        if (obj.get("result").equals("pass")) {
+          startLoop();
+          authed = true;
+          return true;
+        } else {
+          return false;
+        }
+      }
+    } catch (IOException ex) {
+
+    }
+    return false;
+  }
+
+  void startLoop() {
+    loop = new SwingWorker<Void, Void>() {
+      @Override
+      protected Void doInBackground() throws Exception {
+        while (init) {
+          try {
             String line = socketReader.readLine();
             JSONObject obj = (JSONObject) JSONValue.parse(line);
+            gotData(obj);
             System.out.println(line);
-            if (obj.get("purpose").equals("auth")) {
-                if (obj.get("result").equals("pass")) {
-                    startLoop();
-                    authed = true;
-                    return true;
-                } else {
-                    return false;
-                }
-            }
-        } catch (IOException ex) {
-            
+          } catch (IOException ex) {
+            System.out.println("I/O error occured");
+          }
         }
-        return false;
-    }
+        return null;
+      }
+    };
+    loop.execute();
+  }
 
-    void startLoop() {
-        loop = new SwingWorker<Void, Void>() {
-            @Override
-            protected Void doInBackground() throws Exception {
-                while (init) {
-                    try {
-                        String line = socketReader.readLine();
-                        //JSONObject obj = (JSONObject) JSONValue.parse(line);
-                        System.out.println(line);
-                    } catch (IOException ex) {
-                        System.out.println("I/O error occured");
-                    }
-                }
-                return null;
-            }
-        };
-        loop.execute();
-    }
-    
-    void sendData(String data) {
-        JSONObject toSend = new JSONObject();
-        toSend.put("message", data);
-        socketWriter.println(toSend);
-    }
+  void sendData(String data) {
+    JSONObject toSend = new JSONObject();
+    toSend.put("message", data);
+    socketWriter.println(toSend);
+  }
 }
 
-public class UserGUI extends javax.swing.JFrame {
+public class UserGUI extends javax.swing.JFrame implements Callback {
 
-    ServerConnection connection;
+  ServerConnection connection;
 
-    /**
-     * Creates new form UserGUI
-     */
-    public UserGUI() {
-        initComponents();
+  public void getData(JSONObject obj) {
+    // order: id, temp, wind, humid, light
+    JSONArray arr = (JSONArray) obj.get("data");
+
+    DefaultTableModel model = (DefaultTableModel) jTable1.getModel();
+    int rowCount = model.getRowCount();
+    for (int i = rowCount - 1; i >= 0; i--) {
+      model.removeRow(i);
+    }
+    for (int i = 0; i < arr.size(); i++) {
+      String id, temp, wind, humid, light;
+      JSONObject ele = (JSONObject) arr.get(i);
+      id = ele.get("id").toString();
+      temp = ele.get("temp").toString();
+      wind = ele.get("wind").toString();
+      humid = ele.get("humidity").toString();
+      light = ele.get("humidity").toString();
+      model.addRow(new Object[]{id, temp, wind, humid, light});
     }
 
-    /**
-     * This method is called from within the constructor to initialize the form.
-     * WARNING: Do NOT modify this code. The content of this method is always
-     * regenerated by the Form Editor.
-     */
-    @SuppressWarnings("unchecked")
-    // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
-    private void initComponents() {
+  }
 
-        jLabel1 = new javax.swing.JLabel();
-        jLabel2 = new javax.swing.JLabel();
-        jLabel3 = new javax.swing.JLabel();
-        jButton1 = new javax.swing.JButton();
-        jButton2 = new javax.swing.JButton();
-        jButton3 = new javax.swing.JButton();
+  /**
+   * Creates new form UserGUI
+   */
+  public UserGUI() {
+    initComponents();
+    JTextField usernameField = new JTextField(5);
+    JTextField passwordField = new JTextField(5);
 
-        setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
+    JPanel myPanel = new JPanel();
+    myPanel.add(new JLabel("Username: "));
+    myPanel.add(usernameField);// a spacer
+    myPanel.add(new JLabel("Password: "));
+    myPanel.add(passwordField);
 
-        jLabel1.setText("jLabel1");
+    int result = JOptionPane.showConfirmDialog(null, myPanel,
+            "Login", JOptionPane.OK_CANCEL_OPTION);
+    if (!(result == JOptionPane.OK_OPTION)) {
+      System.exit(1);
+    } else {
+      connection = new ServerConnection("localhost", 1111);
+      if (connection.init()) {
+        System.out.println("init passed");
+      }
+      if (!connection.auth(usernameField.getText(), passwordField.getText())) {
+        JPanel authFailPanel = new JPanel();
+        authFailPanel.add(new JLabel("Auth Failed"));
+        JOptionPane.showConfirmDialog(null, authFailPanel, "Error", JOptionPane.DEFAULT_OPTION);
+        System.exit(1);
+      } else {
+        System.out.println("auth successful");
+        connection.listeners.add(this);
+      }
+    }
+  }
 
-        jLabel2.setText("jLabel2");
+  /**
+   * This method is called from within the constructor to initialize the form.
+   * WARNING: Do NOT modify this code. The content of this method is always
+   * regenerated by the Form Editor.
+   */
+  @SuppressWarnings("unchecked")
+  // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
+  private void initComponents() {
 
-        jLabel3.setText("jLabel3");
+    jScrollPane1 = new javax.swing.JScrollPane();
+    jTable1 = new javax.swing.JTable();
 
-        jButton1.setText("init");
-        jButton1.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jButton1ActionPerformed(evt);
-            }
-        });
+    setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
 
-        jButton2.setText("auth");
-        jButton2.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jButton2ActionPerformed(evt);
-            }
-        });
+    jTable1.setModel(new javax.swing.table.DefaultTableModel(
+      new Object [][] {
 
-        jButton3.setText("jButton3");
-        jButton3.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jButton3ActionPerformed(evt);
-            }
-        });
+      },
+      new String [] {
+        "ID", "Temp", "Wind", "Humidity", "Light"
+      }
+    ));
+    jScrollPane1.setViewportView(jTable1);
 
-        javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
-        getContentPane().setLayout(layout);
-        layout.setHorizontalGroup(
-            layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(layout.createSequentialGroup()
-                .addContainerGap()
-                .addComponent(jLabel1)
-                .addGap(62, 62, 62)
-                .addComponent(jLabel2)
-                .addGap(66, 66, 66)
-                .addComponent(jLabel3)
-                .addContainerGap(160, Short.MAX_VALUE))
-            .addGroup(layout.createSequentialGroup()
-                .addComponent(jButton1)
-                .addGap(18, 18, 18)
-                .addComponent(jButton2)
-                .addGap(29, 29, 29)
-                .addComponent(jButton3)
-                .addGap(0, 0, Short.MAX_VALUE))
-        );
-        layout.setVerticalGroup(
-            layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(layout.createSequentialGroup()
-                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(jButton1)
-                    .addComponent(jButton2)
-                    .addComponent(jButton3))
-                .addGap(89, 89, 89)
-                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(jLabel1)
-                    .addComponent(jLabel2)
-                    .addComponent(jLabel3))
-                .addContainerGap(174, Short.MAX_VALUE))
-        );
+    javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
+    getContentPane().setLayout(layout);
+    layout.setHorizontalGroup(
+      layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+      .addGroup(layout.createSequentialGroup()
+        .addContainerGap()
+        .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 741, Short.MAX_VALUE)
+        .addContainerGap())
+    );
+    layout.setVerticalGroup(
+      layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+      .addGroup(layout.createSequentialGroup()
+        .addContainerGap()
+        .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 516, Short.MAX_VALUE)
+        .addContainerGap())
+    );
 
-        pack();
-    }// </editor-fold>//GEN-END:initComponents
+    pack();
+  }// </editor-fold>//GEN-END:initComponents
 
-    private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
-        // TODO add your handling code here:
-        connection = new ServerConnection("localhost", 1111);
-        if (connection.init()) {
-            jLabel1.setText("Init successful");
-        }
-    }//GEN-LAST:event_jButton1ActionPerformed
-
-    private void jButton2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton2ActionPerformed
-        // TODO add your handling code here:
-        if (connection.init && !connection.authed && connection.auth("arek", "m")) {
-            jLabel2.setText("Auth succesfull");
-        }
-    }//GEN-LAST:event_jButton2ActionPerformed
-
-    private void jButton3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton3ActionPerformed
-        if (connection.init && connection.authed) {
-            connection.sendData("test");
-        }
-    }//GEN-LAST:event_jButton3ActionPerformed
-
-    /**
-     * @param args the command line arguments
-     */
-    public static void main(String args[]) {
-        /* Set the Nimbus look and feel */
-        //<editor-fold defaultstate="collapsed" desc=" Look and feel setting code (optional) ">
-        /* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
+  /**
+   * @param args the command line arguments
+   */
+  public static void main(String args[]) {
+    /* Set the Nimbus look and feel */
+    //<editor-fold defaultstate="collapsed" desc=" Look and feel setting code (optional) ">
+    /* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
          * For details see http://download.oracle.com/javase/tutorial/uiswing/lookandfeel/plaf.html 
-         */
-        try {
-            for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-                if ("Nimbus".equals(info.getName())) {
-                    javax.swing.UIManager.setLookAndFeel(info.getClassName());
-                    break;
-                }
-            }
-        } catch (ClassNotFoundException ex) {
-            java.util.logging.Logger.getLogger(UserGUI.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        } catch (InstantiationException ex) {
-            java.util.logging.Logger.getLogger(UserGUI.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        } catch (IllegalAccessException ex) {
-            java.util.logging.Logger.getLogger(UserGUI.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        } catch (javax.swing.UnsupportedLookAndFeelException ex) {
-            java.util.logging.Logger.getLogger(UserGUI.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
+     */
+    try {
+      for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
+        if ("Nimbus".equals(info.getName())) {
+          javax.swing.UIManager.setLookAndFeel(info.getClassName());
+          break;
         }
-        //</editor-fold>
-
-        /* Create and display the form */
-        java.awt.EventQueue.invokeLater(new Runnable() {
-            public void run() {
-                new UserGUI().setVisible(true);
-            }
-        });
+      }
+    } catch (ClassNotFoundException ex) {
+      java.util.logging.Logger.getLogger(UserGUI.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
+    } catch (InstantiationException ex) {
+      java.util.logging.Logger.getLogger(UserGUI.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
+    } catch (IllegalAccessException ex) {
+      java.util.logging.Logger.getLogger(UserGUI.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
+    } catch (javax.swing.UnsupportedLookAndFeelException ex) {
+      java.util.logging.Logger.getLogger(UserGUI.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
     }
+    //</editor-fold>
 
-    // Variables declaration - do not modify//GEN-BEGIN:variables
-    private javax.swing.JButton jButton1;
-    private javax.swing.JButton jButton2;
-    private javax.swing.JButton jButton3;
-    private javax.swing.JLabel jLabel1;
-    private javax.swing.JLabel jLabel2;
-    private javax.swing.JLabel jLabel3;
-    // End of variables declaration//GEN-END:variables
+    /* Create and display the form */
+    java.awt.EventQueue.invokeLater(new Runnable() {
+      public void run() {
+        new UserGUI().setVisible(true);
+      }
+    });
+  }
+
+  // Variables declaration - do not modify//GEN-BEGIN:variables
+  private javax.swing.JScrollPane jScrollPane1;
+  private javax.swing.JTable jTable1;
+  // End of variables declaration//GEN-END:variables
 }
